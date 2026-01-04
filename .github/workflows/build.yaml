@@ -6,55 +6,48 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    
+    timeout-minutes: 300
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      
+
     - name: Setup MSVC
       uses: microsoft/setup-msbuild@v1.1
-      
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
     - name: Install Build Tools
       run: |
-        # 安装 Chocolatey
         Set-ExecutionPolicy Bypass -Scope Process -Force
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
         iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-        
-        # 安装必要的构建工具
-        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+
         choco install ninja -y
         choco install 7zip -y
-        
+
     - name: Clone LLVM
       run: |
         git clone https://github.com/llvm/llvm-project.git llvm-src
         cd llvm-src
         git checkout llvmorg-21.1.8
-        
+
     - name: Configure CMake
       run: |
         mkdir build
         cd build
-        cmake ../llvm-src/llvm ^
-          -G "Ninja" ^
-          -DCMAKE_BUILD_TYPE=Release ^
-          -DCMAKE_INSTALL_PREFIX=../install ^
-          -DLLVM_BUILD_STATIC=ON ^
-          -DBUILD_SHARED_LIBS=OFF ^
-          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
-          -DLLVM_ENABLE_ZLIB=OFF ^
-          -DLLVM_ENABLE_TERMINFO=OFF ^
-          -DLLVM_ENABLE_LIBEDIT=OFF ^
-          -DLLVM_ENABLE_LIBXML2=OFF
-          
+        cmake ..\llvm-src\llvm -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../install -DLLVM_BUILD_STATIC=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_TERMINFO=OFF -DLLVM_ENABLE_LIBEDIT=OFF -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_ENABLE_PROJECTS="clang;lld"
+
     - name: Build LLVM
       run: |
         cd build
-        cmake --build . --config Release --target install
+        cmake --build . --config Release --target install -j 4
         cd ../install
         7z a llvm-static.zip *
-        
+
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
