@@ -1,7 +1,7 @@
 name: Build Static LLVM
 
 on:
-  workflow_dispatch:  # 只保留手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -43,5 +43,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: llvm-static-windows
-        path: build/install/llvm-static.zip
-
+        path: llvm-static.zip
