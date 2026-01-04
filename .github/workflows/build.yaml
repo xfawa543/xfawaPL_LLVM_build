@@ -11,13 +11,8 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       
-    - name: Install Visual Studio Build Tools
-      uses: ilammy/setup-vs@v1
-      with:
-        components: |
-          Microsoft.VisualStudio.Workload.VCTools
-          Microsoft.VisualStudio.Component.VC.Tools.x86.x64
-          Microsoft.VisualStudio.Component.Windows10SDK
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v1.1
       
     - name: Install Build Tools
       run: |
