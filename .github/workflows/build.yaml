@@ -11,9 +11,17 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       
+    - name: Install Visual Studio Build Tools
+      uses: ilammy/setup-vs@v1
+      with:
+        components: |
+          Microsoft.VisualStudio.Workload.VCTools
+          Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+          Microsoft.VisualStudio.Component.Windows10SDK
+      
     - name: Install Build Tools
       run: |
-        # 安装 Chocolatey（如果未安装）
+        # 安装 Chocolatey
         Set-ExecutionPolicy Bypass -Scope Process -Force
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
         iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
@@ -39,7 +47,11 @@ jobs:
           -DCMAKE_INSTALL_PREFIX=../install ^
           -DLLVM_BUILD_STATIC=ON ^
           -DBUILD_SHARED_LIBS=OFF ^
-          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+          -DLLVM_ENABLE_ZLIB=OFF ^
+          -DLLVM_ENABLE_TERMINFO=OFF ^
+          -DLLVM_ENABLE_LIBEDIT=OFF ^
+          -DLLVM_ENABLE_LIBXML2=OFF
           
     - name: Build LLVM
       run: |
