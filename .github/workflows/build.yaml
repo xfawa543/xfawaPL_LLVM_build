@@ -1,4 +1,4 @@
-name: Build Full Static LLVM
+name: Build Full Static LLVM (MSVC)
 
 on:
   workflow_dispatch:
@@ -28,8 +28,6 @@ jobs:
 
         choco install ninja -y
         choco install 7zip -y
-        choco install cmake -y
-        choco install python311 -y
 
     - name: Clone LLVM
       run: |
@@ -50,10 +48,8 @@ jobs:
           -DLLVM_ENABLE_PROJECTS="clang;lld" `
           -DCLANG_BUILD_STATIC_LIBS=ON `
           -DLLVM_STATIC_LINK_CLANG_DL_LIBS=ON `
-          -DCLANG_ENABLE_STATIC_ANALYZER=ON `
-          -DCLANG_ENABLE_ARCMT=ON `
           -DLLVM_INCLUDE_BENCHMARKS=OFF `
-          -DLLVM_INCLUDE_TESTS=ON `
+          -DLLVM_INCLUDE_TESTS=OFF `
           -DLLVM_ENABLE_OCAMLDOC=OFF `
           -DLLVM_ENABLE_BINDINGS=OFF
 
@@ -69,4 +65,3 @@ jobs:
       with:
         name: llvm-full-static-windows
         path: llvm-full-static.zip
-
