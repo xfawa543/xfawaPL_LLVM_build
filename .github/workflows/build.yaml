@@ -1,4 +1,4 @@
-name: Build Static LLVM
+name: Build Full Static LLVM
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 300
+    timeout-minutes: 600
 
     steps:
     - name: Checkout
@@ -28,6 +28,8 @@ jobs:
 
         choco install ninja -y
         choco install 7zip -y
+        choco install cmake -y
+        choco install python311 -y
 
     - name: Clone LLVM
       run: |
@@ -39,17 +41,32 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake ..\llvm-src\llvm -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../install -DLLVM_BUILD_STATIC=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_TERMINFO=OFF -DLLVM_ENABLE_LIBEDIT=OFF -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_ENABLE_PROJECTS="clang;lld"
+        cmake ..\llvm-src\llvm -G "Ninja" `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_INSTALL_PREFIX=../install `
+          -DLLVM_BUILD_STATIC=ON `
+          -DBUILD_SHARED_LIBS=OFF `
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+          -DLLVM_ENABLE_PROJECTS="clang;lld" `
+          -DCLANG_BUILD_STATIC_LIBS=ON `
+          -DLLVM_STATIC_LINK_CLANG_DL_LIBS=ON `
+          -DCLANG_ENABLE_STATIC_ANALYZER=ON `
+          -DCLANG_ENABLE_ARCMT=ON `
+          -DLLVM_INCLUDE_BENCHMARKS=OFF `
+          -DLLVM_INCLUDE_TESTS=ON `
+          -DLLVM_ENABLE_OCAMLDOC=OFF `
+          -DLLVM_ENABLE_BINDINGS=OFF
 
     - name: Build LLVM
       run: |
         cd build
-        cmake --build . --config Release --target install -j 4
+        cmake --build . --config Release --target install -j 2
         cd ../install
-        7z a llvm-static.zip *
+        7z a llvm-full-static.zip *
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: llvm-static-windows
-        path: llvm-static.zip
+        name: llvm-full-static-windows
+        path: llvm-full-static.zip
+
