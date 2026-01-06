@@ -27,20 +27,16 @@ jobs:
         echo "MSVC Path: $msvcPath"
         echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
 
-    - name: Find Windows SDK Tools Path
+    - name: Find Windows SDK x64 Path
       id: sdk-path
       run: |
         $sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
-        $sdkPath = $null
-        $sdkPath = Get-ChildItem "$sdkRoot\bin\10*" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$_\x64\rc.exe" } | Select-Object -First 1 -ExpandProperty FullName
-        if (-not $sdkPath) {
-            $sdkPath = Get-ChildItem "$sdkRoot\bin\x64" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        $sdkToolsPath = Get-ChildItem "$sdkRoot\bin\10*" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$_\x64\rc.exe" } | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $sdkToolsPath) {
+            $sdkToolsPath = "$sdkRoot\bin\x64"
         }
-        if (-not $sdkPath) {
-            $sdkPath = "$sdkRoot\bin\x64"
-        }
-        echo "SDK Path: $sdkPath"
-        echo "sdk_path=$sdkPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+        echo "SDK Tools Path: $sdkToolsPath\x64"
+        echo "sdk_path=$sdkToolsPath\x64" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
 
     - name: Clone LLVM
       run: |
@@ -53,6 +49,8 @@ jobs:
         $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
         $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
         $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
         mkdir build
         cd build
         cmake ..\llvm-src\llvm -G "Ninja" `
@@ -63,7 +61,6 @@ jobs:
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
           -DCMAKE_C_COMPILER=cl `
           -DCMAKE_CXX_COMPILER=cl `
-          -DCMAKE_RC_COMPILER=rc.exe `
           -DLLVM_ENABLE_PROJECTS="clang;lld" `
           -DCLANG_BUILD_STATIC_LIBS=ON `
           -DLLVM_STATIC_LINK_CLANG_DL_LIBS=ON `
