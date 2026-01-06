@@ -27,10 +27,13 @@ jobs:
         echo "MSVC Path: $msvcPath"
         echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
 
-    - name: Find Windows SDK Path
+    - name: Find Windows SDK x64 Path
       id: sdk-path
       run: |
-        $sdkPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Bin" -Directory | Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName
+        $sdkPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\x64" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $sdkPath) {
+            $sdkPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Bin" -Directory | Where-Object {$_.Name -eq 'x64'} | Select-Object -First 1 -ExpandProperty FullName
+        }
         echo "SDK Path: $sdkPath"
         echo "sdk_path=$sdkPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
 
@@ -44,7 +47,7 @@ jobs:
       run: |
         $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
         $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
-        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath\x64;$env:PATH"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
         mkdir build
         cd build
         cmake ..\llvm-src\llvm -G "Ninja" `
@@ -68,7 +71,7 @@ jobs:
       run: |
         $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
         $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
-        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath\x64;$env:PATH"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
         cd build
         cmake --build . --config Release --target install -j 2
         cd ../install
@@ -79,4 +82,3 @@ jobs:
       with:
         name: llvm-full-static-windows
         path: llvm-full-static.zip
-
