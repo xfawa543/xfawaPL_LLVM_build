@@ -12,6 +12,21 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Find VS Path
+      id: vs-path
+      run: |
+        $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+        echo "VS Path: $vsPath"
+        echo "vs_path=$vsPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find MSVC Path
+      id: msvc-path
+      run: |
+        $vsPath = "${{ steps.vs-path.outputs.vs_path }}"
+        $msvcPath = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory | Select-Object -First 1 -ExpandProperty FullName
+        echo "MSVC Path: $msvcPath"
+        echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
     - name: Clone LLVM
       run: |
         git clone https://github.com/llvm/llvm-project.git llvm-src
@@ -20,8 +35,8 @@ jobs:
 
     - name: Configure CMake
       run: |
-        $env:PATH = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.40.33807\bin\Hostx64\x64;C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE;C:\Program Files (x86)\Windows Kits\10\bin\x64;$env:PATH"
-        $env:CMAKE_PREFIX_PATH = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.40.33807"
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$env:PATH"
         mkdir build
         cd build
         cmake ..\llvm-src\llvm -G "Ninja" `
@@ -42,7 +57,8 @@ jobs:
 
     - name: Build LLVM
       run: |
-        $env:PATH = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.40.33807\bin\Hostx64\x64;C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE;C:\Program Files (x86)\Windows Kits\10\bin\x64;$env:PATH"
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$env:PATH"
         cd build
         cmake --build . --config Release --target install -j 2
         cd ../install
@@ -53,3 +69,4 @@ jobs:
       with:
         name: llvm-full-static-windows
         path: llvm-full-static.zip
+
