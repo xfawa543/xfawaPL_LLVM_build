@@ -27,6 +27,13 @@ jobs:
         echo "MSVC Path: $msvcPath"
         echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
 
+    - name: Find Windows SDK Path
+      id: sdk-path
+      run: |
+        $sdkPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Bin" -Directory | Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName
+        echo "SDK Path: $sdkPath"
+        echo "sdk_path=$sdkPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
     - name: Clone LLVM
       run: |
         git clone https://github.com/llvm/llvm-project.git llvm-src
@@ -36,7 +43,8 @@ jobs:
     - name: Configure CMake
       run: |
         $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
-        $env:PATH = "$msvcPath\bin\Hostx64\x64;$env:PATH"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath\x64;$env:PATH"
         mkdir build
         cd build
         cmake ..\llvm-src\llvm -G "Ninja" `
@@ -47,6 +55,7 @@ jobs:
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
           -DCMAKE_C_COMPILER=cl `
           -DCMAKE_CXX_COMPILER=cl `
+          -DCMAKE_RC_COMPILER=rc.exe `
           -DLLVM_ENABLE_PROJECTS="clang;lld" `
           -DCLANG_BUILD_STATIC_LIBS=ON `
           -DLLVM_STATIC_LINK_CLANG_DL_LIBS=ON `
@@ -58,7 +67,8 @@ jobs:
     - name: Build LLVM
       run: |
         $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
-        $env:PATH = "$msvcPath\bin\Hostx64\x64;$env:PATH"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath\x64;$env:PATH"
         cd build
         cmake --build . --config Release --target install -j 2
         cd ../install
