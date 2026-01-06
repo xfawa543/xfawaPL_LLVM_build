@@ -27,12 +27,17 @@ jobs:
         echo "MSVC Path: $msvcPath"
         echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
 
-    - name: Find Windows SDK x64 Path
+    - name: Find Windows SDK Tools Path
       id: sdk-path
       run: |
-        $sdkPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\x64" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        $sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+        $sdkPath = $null
+        $sdkPath = Get-ChildItem "$sdkRoot\bin\10*" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$_\x64\rc.exe" } | Select-Object -First 1 -ExpandProperty FullName
         if (-not $sdkPath) {
-            $sdkPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Bin" -Directory | Where-Object {$_.Name -eq 'x64'} | Select-Object -First 1 -ExpandProperty FullName
+            $sdkPath = Get-ChildItem "$sdkRoot\bin\x64" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        }
+        if (-not $sdkPath) {
+            $sdkPath = "$sdkRoot\bin\x64"
         }
         echo "SDK Path: $sdkPath"
         echo "sdk_path=$sdkPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
@@ -82,3 +87,4 @@ jobs:
       with:
         name: llvm-full-static-windows
         path: llvm-full-static.zip
+
