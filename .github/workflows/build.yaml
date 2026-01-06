@@ -50,7 +50,7 @@ jobs:
         $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
         $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
         $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
-        $env:INCLUDE = "$msvcPath\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
         mkdir build
         cd build
         cmake ..\llvm-src\llvm -G "Ninja" `
@@ -74,6 +74,8 @@ jobs:
         $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
         $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
         $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
         cd build
         cmake --build . --config Release --target install -j 2
         cd ../install
@@ -84,4 +86,5 @@ jobs:
       with:
         name: llvm-full-static-windows
         path: llvm-full-static.zip
+
 
