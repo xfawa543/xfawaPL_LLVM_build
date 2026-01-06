@@ -12,23 +12,6 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v1.1
-
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install Build Tools
-      run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-
-        choco install ninja -y
-        choco install 7zip -y
-
     - name: Clone LLVM
       run: |
         git clone https://github.com/llvm/llvm-project.git llvm-src
@@ -37,6 +20,8 @@ jobs:
 
     - name: Configure CMake
       run: |
+        $env:PATH = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.40.33807\bin\Hostx64\x64;C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE;C:\Program Files (x86)\Windows Kits\10\bin\x64;$env:PATH"
+        $env:CMAKE_PREFIX_PATH = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.40.33807"
         mkdir build
         cd build
         cmake ..\llvm-src\llvm -G "Ninja" `
@@ -45,6 +30,8 @@ jobs:
           -DLLVM_BUILD_STATIC=ON `
           -DBUILD_SHARED_LIBS=OFF `
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+          -DCMAKE_C_COMPILER=cl `
+          -DCMAKE_CXX_COMPILER=cl `
           -DLLVM_ENABLE_PROJECTS="clang;lld" `
           -DCLANG_BUILD_STATIC_LIBS=ON `
           -DLLVM_STATIC_LINK_CLANG_DL_LIBS=ON `
@@ -55,6 +42,7 @@ jobs:
 
     - name: Build LLVM
       run: |
+        $env:PATH = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.40.33807\bin\Hostx64\x64;C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE;C:\Program Files (x86)\Windows Kits\10\bin\x64;$env:PATH"
         cd build
         cmake --build . --config Release --target install -j 2
         cd ../install
