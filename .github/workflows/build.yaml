@@ -57,10 +57,12 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release `
           -DCMAKE_INSTALL_PREFIX=../install `
           -DLLVM_BUILD_STATIC=ON `
+          -DLLVM_LINK_LLVM_DYLIB=OFF `
           -DBUILD_SHARED_LIBS=OFF `
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
           -DCMAKE_C_COMPILER=cl `
           -DCMAKE_CXX_COMPILER=cl `
+          -DCMAKE_EXE_LINKER_FLAGS="" `
           -DLLVM_ENABLE_PROJECTS="clang;lld" `
           -DCLANG_BUILD_STATIC_LIBS=ON `
           -DLLVM_STATIC_LINK_CLANG_DL_LIBS=ON `
@@ -78,13 +80,15 @@ jobs:
         $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
         cd build
         cmake --build . --config Release --target install -j 2
-        cd ../install
-        7z a llvm-full-static.zip *
+        if (Test-Path "../install") {
+            cd ../install
+            7z a llvm-full-static.zip *
+        }
 
     - name: Upload Artifact
+      if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
         name: llvm-full-static-windows
         path: llvm-full-static.zip
-
 
