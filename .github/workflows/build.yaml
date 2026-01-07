@@ -64,12 +64,12 @@ jobs:
           -DCMAKE_CXX_COMPILER=cl `
           -DCMAKE_EXE_LINKER_FLAGS="" `
           -DLLVM_ENABLE_PROJECTS="clang;lld" `
-          -DCLANG_BUILD_STATIC_LIBS=ON `
-          -DLLVM_STATIC_LINK_CLANG_DL_LIBS=ON `
           -DLLVM_INCLUDE_BENCHMARKS=OFF `
           -DLLVM_INCLUDE_TESTS=OFF `
           -DLLVM_ENABLE_OCAMLDOC=OFF `
-          -DLLVM_ENABLE_BINDINGS=OFF
+          -DLLVM_ENABLE_BINDINGS=OFF `
+          -DLLVM_TOOL_CLANG_BUILD=ON `
+          -DLLVM_TOOL_LLD_BUILD=ON
 
     - name: Build LLVM
       run: |
@@ -91,4 +91,3 @@ jobs:
       with:
         name: llvm-full-static-windows
         path: llvm-full-static.zip
-
