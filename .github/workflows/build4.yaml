@@ -1,0 +1,86 @@
+name: Build Full Static LLVM (MSVC) 4
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 600
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Find VS Path
+      id: vs-path
+      run: |
+        $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+        echo "vs_path=$vsPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find MSVC Path
+      id: msvc-path
+      run: |
+        $vsPath = "${{ steps.vs-path.outputs.vs_path }}"
+        $msvcPath = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory | Select-Object -First 1 -ExpandProperty FullName
+        echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find Windows SDK x64 Path
+      id: sdk-path
+      run: |
+        $sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+        $sdkToolsPath = Get-ChildItem "$sdkRoot\bin\10*" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$_\x64\rc.exe" } | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $sdkToolsPath) {
+            $sdkToolsPath = "$sdkRoot\bin\x64"
+        }
+        echo "sdk_path=$sdkToolsPath\x64" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Clone LLVM from fixed branch
+      run: |
+        git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
+        cd llvm-src
+
+    - name: Configure CMake
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
+        mkdir build
+        cd build
+        cmake ..\llvm-src\llvm -G "Ninja" `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_INSTALL_PREFIX=../install `
+          -DLLVM_BUILD_STATIC=ON `
+          -DLLVM_LINK_LLVM_DYLIB=OFF `
+          -DBUILD_SHARED_LIBS=OFF `
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+          -DCMAKE_C_COMPILER=cl `
+          -DCMAKE_CXX_COMPILER=cl `
+          -DCMAKE_EXE_LINKER_FLAGS="" `
+          -DLLVM_ENABLE_PROJECTS="clang;lld" `
+          -DLLVM_INCLUDE_BENCHMARKS=OFF `
+          -DLLVM_INCLUDE_TESTS=OFF `
+          -DLLVM_ENABLE_OCAMLDOC=OFF `
+          -DLLVM_ENABLE_BINDINGS=OFF `
+          -DLLVM_TOOL_CLANG_BUILD=ON `
+          -DLLVM_TOOL_LLD_BUILD=ON
+
+    - name: Build LLVM
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
+        cd build
+        cmake --build . --config Release --target install -j 2
+        cd ..
+        7z a llvm-full-static.zip ./install/*
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-full-static-windows
+        path: llvm-full-static.zip
