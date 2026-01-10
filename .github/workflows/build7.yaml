@@ -77,7 +77,7 @@ jobs:
         cd build
         cmake --build . --config Release --target install -j 2
         cd ../
-        7z a llvm-full-static.zip *
+        7z a -bsp1 llvm-full-static.zip *
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
