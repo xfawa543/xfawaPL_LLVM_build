@@ -76,7 +76,6 @@ jobs:
         $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
         cd build
         cmake --build . --config Release --target install -j 2
-        cd ../..
         7z a llvm-full-static.zip *
 
     - name: Upload Artifact
