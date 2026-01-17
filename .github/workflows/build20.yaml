@@ -1,0 +1,113 @@
+name: Build Full Static LLVM (MSVC) 20
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 600
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Clean MinGW from PATH
+      run: |
+        $cleanPath = @(
+            "$env:PATH" -split ';' | Where-Object {
+                $_ -notmatch 'mingw|chocolatey|git|usr\\bin' -and $_ -notmatch 'C:\\ProgramData\\chocolatey'
+            }
+        )
+        $env:PATH = $cleanPath -join ';'
+        Write-Host "Cleaned PATH length: $($env:PATH.Length)"
+
+    - name: Find VS Path
+      id: vs-path
+      run: |
+        $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+        echo "vs_path=$vsPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find MSVC Path
+      id: msvc-path
+      run: |
+        $vsPath = "${{ steps.vs-path.outputs.vs_path }}"
+        $msvcPath = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory | Select-Object -First 1 -ExpandProperty FullName
+        echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find Windows SDK x64 Path
+      id: sdk-path
+      run: |
+        $sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+        $sdkToolsPath = Get-ChildItem "$sdkRoot\bin\10*" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$_\x64\rc.exe" } | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $sdkToolsPath) {
+            $sdkToolsPath = "$sdkRoot\bin\x64"
+        }
+        echo "sdk_path=$sdkToolsPath\x64" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Clone LLVM from fixed branch
+      run: |
+        git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
+        cd llvm-src
+
+    - name: Configure CMake
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;C:\Windows\system32"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
+
+        $installPath = "$(Get-Location)\install"
+        echo "Install path: $installPath"
+        mkdir install -Force
+        mkdir build -Force
+
+        cd build
+        cmake ..\llvm-src\llvm -G "Ninja" `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_INSTALL_PREFIX="$installPath" `
+          -DLLVM_BUILD_STATIC=ON `
+          -DLLVM_LINK_LLVM_DYLIB=OFF `
+          -DBUILD_SHARED_LIBS=OFF `
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+          -DLLVM_TARGETS_TO_BUILD="X86;ARM;AArch64;RISCV" `
+          -DLLVM_ENABLE_PROJECTS="clang;lld" `
+          -DLLVM_INCLUDE_BENCHMARKS=OFF `
+          -DLLVM_INCLUDE_TESTS=OFF `
+          -DLLVM_ENABLE_OCAMLDOC=OFF `
+          -DLLVM_ENABLE_BINDINGS=OFF `
+          -DLLVM_TOOL_CLANG_BUILD=ON `
+          -DLLVM_TOOL_LLD_BUILD=ON
+
+    - name: Build and Install LLVM
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;C:\Windows\system32"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
+
+        cd build
+
+        cmake --build . --config Release -j 2
+
+        ninja install
+
+        cd ..
+        if (Test-Path "install") {
+            $installContents = Get-ChildItem "install" -Recurse | Where-Object { -not $_.PSIsContainer } | Measure-Object
+            if ($installContents.Count -gt 0) {
+                7z a llvm-full-static.zip ./install/*
+            } else {
+                echo "ERROR: install directory is empty"
+            }
+        } else {
+            echo "ERROR: install directory doesn't exist"
+        }
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-full-static-windows
+        path: llvm-full-static.zip
