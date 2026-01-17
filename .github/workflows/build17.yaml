@@ -1,0 +1,132 @@
+name: Build Full Static LLVM (MSVC) 17
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 600
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Find VS Path
+      id: vs-path
+      run: |
+        $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+        echo "vs_path=$vsPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find MSVC Path
+      id: msvc-path
+      run: |
+        $vsPath = "${{ steps.vs-path.outputs.vs_path }}"
+        $msvcPath = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory | Select-Object -First 1 -ExpandProperty FullName
+        echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find Tools Path
+      id: tools-path
+      run: |
+        $vsPath = "${{ steps.vs-path.outputs.vs_path }}"
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $cmakePath = "$vsPath\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+        $ninjaPath = "$vsPath\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
+        if (-not (Test-Path $cmakePath)) {
+            $cmakePath = "$vsPath\CMake\bin\cmake.exe"
+        }
+        if (-not (Test-Path $ninjaPath)) {
+            $ninjaPath = "$msvcPath\..\..\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
+        }
+        echo "cmake_path=$cmakePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+        echo "ninja_path=$ninjaPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find Windows SDK Version and Path
+      id: sdk-info
+      run: |
+        $sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+        $latestSdk = Get-ChildItem "$sdkRoot\Include" -Directory | Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty Name
+        $sdkLibPath = "$sdkRoot\Lib\$latestSdk"
+        $sdkIncludePath = "$sdkRoot\Include\$latestSdk"
+        $sdkBinPath = Get-ChildItem "$sdkRoot\bin" -Directory | Where-Object { Test-Path "$_\x64\rc.exe" } | Select-Object -First 1 -ExpandProperty FullName
+
+        echo "SDK Version: $latestSdk"
+        echo "sdk_lib=$sdkLibPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+        echo "sdk_include=$sdkIncludePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+        echo "sdk_bin=$sdkBinPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Clone LLVM from fixed branch
+      run: |
+        git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
+        cd llvm-src
+
+    - name: Configure CMake
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $cmakePath = "${{ steps.tools-path.outputs.cmake_path }}"
+        $ninjaPath = "${{ steps.tools-path.outputs.ninja_path }}"
+        $sdkLib = "${{ steps.sdk-info.outputs.sdk_lib }}"
+        $sdkInclude = "${{ steps.sdk-info.outputs.sdk_include }}"
+        $sdkBin = "${{ steps.sdk-info.outputs.sdk_bin }}"
+
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkBin\x64;C:\Windows\system32"
+        $env:LIB = "$msvcPath\lib\x64;$sdkLib\um\x64;$sdkLib\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;$sdkInclude\um;$sdkInclude\ucrt;$sdkInclude\shared"
+
+        $installPath = "$(Get-Location)\install"
+        echo "Install path: $installPath"
+        mkdir install -Force
+        mkdir build -Force
+
+        cd build
+        & "$cmakePath" ..\llvm-src\llvm -G "Ninja" `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_INSTALL_PREFIX="$installPath" `
+          -DLLVM_BUILD_STATIC=ON `
+          -DLLVM_LINK_LLVM_DYLIB=OFF `
+          -DBUILD_SHARED_LIBS=OFF `
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+          -DCMAKE_MAKE_PROGRAM="$ninjaPath" `
+          -DLLVM_TARGETS_TO_BUILD="X86;ARM;AArch64;RISCV" `
+          -DLLVM_ENABLE_PROJECTS="clang;lld" `
+          -DLLVM_INCLUDE_BENCHMARKS=OFF `
+          -DLLVM_INCLUDE_TESTS=OFF `
+          -DLLVM_ENABLE_OCAMLDOC=OFF `
+          -DLLVM_ENABLE_BINDINGS=OFF `
+          -DLLVM_TOOL_CLANG_BUILD=ON `
+          -DLLVM_TOOL_LLD_BUILD=ON
+
+    - name: Build and Install LLVM
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $ninjaPath = "${{ steps.tools-path.outputs.ninja_path }}"
+        $sdkLib = "${{ steps.sdk-info.outputs.sdk_lib }}"
+        $sdkInclude = "${{ steps.sdk-info.outputs.sdk_include }}"
+        $sdkBin = "${{ steps.sdk-info.outputs.sdk_bin }}"
+
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkBin\x64;C:\Windows\system32"
+        $env:LIB = "$msvcPath\lib\x64;$sdkLib\um\x64;$sdkLib\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;$sdkInclude\um;$sdkInclude\ucrt;$sdkInclude\shared"
+
+        cd build
+
+        & "$ninjaPath" -j 2
+        & "$ninjaPath" install
+
+        cd ..
+        if (Test-Path "install") {
+            $installContents = Get-ChildItem "install" -Recurse | Where-Object { -not $_.PSIsContainer } | Measure-Object
+            if ($installContents.Count -gt 0) {
+                7z a llvm-full-static.zip ./install/*
+            } else {
+                echo "ERROR: install directory is empty"
+            }
+        } else {
+            echo "ERROR: install directory doesn't exist"
+        }
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-full-static-windows
+        path: llvm-full-static.zip
