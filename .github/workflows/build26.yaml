@@ -1,0 +1,163 @@
+name: Build Full Static LLVM (Complete build26)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 600
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Find VS Path
+      id: vs-path
+      run: |
+        $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+        echo "vs_path=$vsPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find MSVC Path
+      id: msvc-path
+      run: |
+        $vsPath = "${{ steps.vs-path.outputs.vs_path }}"
+        $msvcPath = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory | Select-Object -First 1 -ExpandProperty FullName
+        echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find Windows SDK x64 Path
+      id: sdk-path
+      run: |
+        $sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+        $sdkToolsPath = Get-ChildItem "$sdkRoot\bin\10*" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$_\x64\rc.exe" } | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $sdkToolsPath) {
+            $sdkToolsPath = "$sdkRoot\bin\x64"
+        }
+        echo "sdk_path=$sdkToolsPath\x64" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Clone LLVM from fixed branch
+      run: |
+        git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
+        cd llvm-src
+
+    - name: Configure Complete LLVM
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
+        
+        $installPath = "$(Get-Location)\install"
+        mkdir install -Force
+        mkdir build -Force
+        
+        cd build
+        
+        # 完整功能配置：保持静态链接但启用所有必要功能
+        cmake ..\llvm-src\llvm -G "Ninja" `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_INSTALL_PREFIX="$installPath" `
+          -DLLVM_TARGETS_TO_BUILD="AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;Mips;MSP430;NVPTX;PowerPC;RISCV;Sparc;SystemZ;WebAssembly;X86" `
+          
+          # 核心静态链接配置
+          -DLLVM_BUILD_STATIC=ON `
+          -DBUILD_SHARED_LIBS=OFF `
+          -DLLVM_BUILD_LLVM_DYLIB=OFF `
+          -DLLVM_LINK_LLVM_DYLIB=OFF `
+          -DLLVM_ENABLE_LLVM_DYLIB=OFF `
+          -DLLVM_USE_CRT_RELEASE=MT `
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+          
+          # 启用完整功能（关键！）
+          -DLLVM_ENABLE_RTTI=ON `                    # 启用RTTI
+          -DLLVM_ENABLE_EH=ON `                      # 启用异常处理
+          -DCLANG_PLUGIN_SUPPORT=ON `               # 启用插件支持
+          -DLLVM_ENABLE_ZLIB=ON `                    # 启用zlib压缩
+          -DLLVM_ENABLE_TERMINFO=ON `                # 启用终端信息
+          -DLLVM_ENABLE_LIBXML2=ON `                 # 启用XML支持
+          
+          # 启用所有工具
+          -DLLVM_ENABLE_PROJECTS="clang;lld;clang-tools-extra" `
+          -DLLVM_TOOL_LLVM_COV_BUILD=ON `
+          -DLLVM_TOOL_LLVM_SYMBOLIZER_BUILD=ON `
+          -DLLVM_TOOL_LLVM_DWARF_DUMP_BUILD=ON `
+          -DLLVM_TOOL_LLVM_GO_BUILD=ON `
+          -DLLVM_TOOL_LLVM_ISEL_FUZZER_BUILD=ON `
+          
+          # 包含所有组件
+          -DLLVM_INCLUDE_BENCHMARKS=ON `
+          -DLLVM_INCLUDE_TESTS=ON `
+          -DLLVM_INCLUDE_DOCS=ON `
+          -DLLVM_INCLUDE_UTILS=ON `
+          -DCLANG_INCLUDE_TESTS=ON `
+          -DCLANG_INCLUDE_DOCS=ON `
+          
+          # 编译器标志（保持优化但启用必要功能）
+          -DCMAKE_CXX_FLAGS="/Zc:inline /Zc:strictStrings /Zc:rvalueCast /GR /EHa /Oi /Oy- /bigobj" `
+          -DCMAKE_C_FLAGS="/Zc:inline /Zc:strictStrings /Zc:rvalueCast /GR /EHa /Oi /Oy- /bigobj" `
+          -DCMAKE_EXE_LINKER_FLAGS="/OPT:REF /OPT:ICF /LTCG" `
+          -DCMAKE_MODULE_LINKER_FLAGS="/OPT:REF /OPT:ICF /LTCG" `
+          
+          # 其他配置
+          -DLLVM_HOST_TRIPLE="$env:COMPUTERNAME-pc-windows-msvc" `
+          -DLLVM_DEFAULT_TARGET_TRIPLE="$env:COMPUTERNAME-pc-windows-msvc" `
+          -DLLVM_ENABLE_WERROR=OFF `
+          -DLLVM_APPEND_VC_REV=OFF `
+          -DLLVM_INSTALL_TOOLCHAIN_ONLY=OFF `
+          -DLLVM_ENABLE_IDE=OFF `
+          -DLLVM_OPTIMIZED_TABLEGEN=ON `
+          -DLLVM_REVERSE_ITERATION=OFF `
+          -DLLVM_USE_SPLIT_DWARF=OFF `
+          -DLLVM_USE_RELATIVE_PATHS_IN_DEBUG_INFO=OFF `
+          -DLLVM_USE_RELATIVE_PATHS_IN_FILES=OFF
+
+    - name: Build and Install Complete LLVM
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
+        
+        cd build
+        
+        # 构建完整项目
+        cmake --build . --config Release -j 2
+        
+        # 安装
+        ninja install
+        
+        # 验证安装结果
+        cd ..
+        if (Test-Path "install") {
+            Write-Host "Installation contents:" -ForegroundColor Green
+            Get-ChildItem "install" -Recurse | Select-Object -First 30
+            
+            # 验证关键工具
+            $tools = @("clang.exe", "clang++.exe", "lld.exe", "llvm-config.exe")
+            foreach ($tool in $tools) {
+                $toolPath = "install/bin/$tool"
+                if (Test-Path $toolPath) {
+                    Write-Host "✓ $tool found" -ForegroundColor Green
+                    dumpbin /dependents $toolPath | Select-String "\.dll" | ForEach-Object {
+                        Write-Host "  DLL dependency: $_" -ForegroundColor Yellow
+                    }
+                } else {
+                    Write-Host "✗ $tool missing" -ForegroundColor Red
+                }
+            }
+            
+            $fileCount = (Get-ChildItem "install" -Recurse | Measure-Object).Count
+            Write-Host "Total files installed: $fileCount" -ForegroundColor Green
+            
+            if ($fileCount -gt 0) {
+                7z a llvm-complete-static.zip ./install/*
+            }
+        }
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-complete-static-windows
+        path: llvm-complete-static.zip
