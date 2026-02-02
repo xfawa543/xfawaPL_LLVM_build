@@ -1,4 +1,4 @@
-name: Build Full Static LLVM (MSVC) Fixed
+name: Build Full Static LLVM (MSVC) Fixed（build34）
 
 on:
   workflow_dispatch:
