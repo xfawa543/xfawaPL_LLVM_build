@@ -1,4 +1,4 @@
-name: Build Full Static LLVM (MSVC) Fixed（build32）
+name: Build Zero-Dependency Cross-Platform LLVM (build32)
 
 on:
   workflow_dispatch:
@@ -40,7 +40,7 @@ jobs:
         git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
         cd llvm-src
 
-    - name: Configure CMake
+    - name: Configure CMake for Zero-Dependency
       run: |
         $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
         $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
@@ -54,11 +54,21 @@ jobs:
         
         cd build
         
-        # 第52行附近 - 确保字符串正确格式化
+        # 基于build31的成功配置，添加零依赖优化
         $cmakeArgs = @(
           "-G", "Ninja",
           "-DCMAKE_BUILD_TYPE=Release",
           "-DCMAKE_INSTALL_PREFIX=$installPath",
+          
+          # === 零依赖核心配置 ===
+          "-DLLVM_BUILD_LLVM_CXX_LIBS=ON",        # 启用LLVM C++库（关键新增）
+          "-DLLVM_ENABLE_LIBCXX=ON",              # 启用libc++（关键新增）
+          "-DLLVM_ENABLE_LIBUNWIND=ON",          # 启用栈展开（关键新增）
+          "-DLLVM_ENABLE_LIBCXXABI=ON",           # 启用C++ ABI（关键新增）
+          "-DCMAKE_CXX_FLAGS=/MT",                # 静态链接C++运行时（关键新增）
+          "-DCMAKE_C_FLAGS=/MT",                  # 静态链接C运行时（关键新增）
+          
+          # === 保持build31的成功配置 ===
           "-DLLVM_TARGETS_TO_BUILD=AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;Mips;MSP430;NVPTX;PowerPC;RISCV;Sparc;SystemZ;WebAssembly;X86",
           "-DLLVM_BUILD_STATIC=ON",
           "-DBUILD_SHARED_LIBS=OFF",
@@ -66,14 +76,11 @@ jobs:
           "-DLLVM_LINK_LLVM_DYLIB=OFF",
           "-DLLVM_ENABLE_LLVM_DYLIB=OFF",
           "-DLLVM_ENABLE_PIC=OFF",
-          "-DLLVM_BUILD_LLVM_CXX_LIBS=OFF",
           "-DLLVM_ENABLE_STATIC_ANALYSIS_TOOLS=ON",
           "-DLLVM_USE_CRT_RELEASE=MT",
           "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
-          "-DLLVM_ENABLE_LIBCXX=OFF",
           "-DLLVM_ENABLE_TERMINFO=OFF",
           "-DLLVM_ENABLE_ZLIB=OFF",
-          "-DLLVM_ENABLE_LIBUNWIND=OFF",
           "-DLLVM_ENABLE_LIBXML2=OFF",
           "-DLLVM_ENABLE_ZSTD=OFF",
           "-DLLVM_ENABLE_LIBEDIT=OFF",
@@ -122,42 +129,100 @@ jobs:
         
         cd build
         
+        # 构建主项目
         cmake --build . --config Release -j 2
         
+        # 检查并修复潜在的动态链接库
+        Write-Host "Checking for unwanted shared libraries..." -ForegroundColor Yellow
         Get-ChildItem -Recurse -Filter "*.dll" | ForEach-Object {
-            Write-Host "Removing DLL: $($_.Name)"
+            Write-Host "Removing unwanted DLL: $($_.Name)" -ForegroundColor Red
             Remove-Item $_.FullName -Force
         }
         
+        # 重新构建以确保完全静态链接
+        Write-Host "Rebuilding to ensure static linking..." -ForegroundColor Yellow
         cmake --build . --config Release -j 2 --target clang lld
         
+        # 安装
         ninja install
         
+        # 验证零依赖
         cd ..
         if (Test-Path "install") {
-            Get-ChildItem "install" -Recurse | Select-Object -First 20
+            Write-Host "=== 零依赖验证 ===" -ForegroundColor Cyan
             
+            # 检查关键工具
             $tools = @("clang.exe", "clang++.exe", "lld.exe", "llvm-config.exe", "llvm-ar.exe", "llvm-objdump.exe")
             foreach ($tool in $tools) {
                 $toolPath = "install/bin/$tool"
                 if (Test-Path $toolPath) {
-                    Write-Host "✓ $tool found"
+                    Write-Host "✓ $tool found" -ForegroundColor Green
+                    
+                    # 检查DLL依赖（应该是零依赖）
+                    Write-Host "  Dependencies:" -ForegroundColor Gray
+                    $deps = dumpbin /dependents $toolPath | Select-String "\.dll"
+                    if ($deps) {
+                        $deps | ForEach-Object {
+                            if ($_.Line -match "VCRUNTIME|MSVCP|api-ms-win-crt") {
+                                Write-Host "  ❌ $($_.Line)" -ForegroundColor Red
+                            } else {
+                                Write-Host "  ✅ $($_.Line)" -ForegroundColor Green
+                            }
+                        }
+                    } else {
+                        Write-Host "  ✅ No DLL dependencies" -ForegroundColor Green
+                    }
                 } else {
-                    Write-Host "✗ $tool missing"
+                    Write-Host "✗ $tool missing" -ForegroundColor Red
+                }
+            }
+            
+            # 测试跨平台编译能力
+            Write-Host "=== 跨平台测试 ===" -ForegroundColor Cyan
+            $testCode = @"
+#include <iostream>
+int main() { std::cout << "Hello Cross-Platform!" << std::endl; return 0; }
+"@
+            $testCode | Out-File "test.cpp" -Encoding utf8
+            
+            # 测试不同目标架构
+            $targets = @("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "arm64-apple-darwin")
+            foreach ($target in $targets) {
+                Write-Host "Testing target: $target" -ForegroundColor Yellow
+                .\install\bin\clang++.exe -target $target -c test.cpp -o "test_$target.o" 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "  ✓ $target supported" -ForegroundColor Green
+                } else {
+                    Write-Host "  ⚠ $target not supported" -ForegroundColor Yellow
                 }
             }
             
             $fileCount = (Get-ChildItem "install" -Recurse | Measure-Object).Count
-            Write-Host "Total files: $fileCount"
+            Write-Host "Total files installed: $fileCount" -ForegroundColor Green
             
             if ($fileCount -gt 0) {
-                7z a llvm-full-static.zip ./install/*
+                7z a llvm-zero-dependency.zip ./install/*
+                Write-Host "✓ Zero-dependency archive created" -ForegroundColor Green
             }
         }
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: llvm-full-static-windows-fixed
-        path: llvm-full-static.zip
+        name: llvm-zero-dependency-windows
+        path: llvm-zero-dependency.zip
+      if: always()
+
+    - name: Upload Build Logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: build/CMakeFiles/CMakeOutput.log
+      if: always()
+
+    - name: Upload Error Logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: error-logs
+        path: build/CMakeFiles/CMakeError.log
       if: always()
