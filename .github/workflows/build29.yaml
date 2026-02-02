@@ -1,0 +1,197 @@
+name: Build Full Static LLVM (MSVC) Fixed
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 600
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Find VS Path
+      id: vs-path
+      run: |
+        $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+        echo "vs_path=$vsPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find MSVC Path
+      id: msvc-path
+      run: |
+        $vsPath = "${{ steps.vs-path.outputs.vs_path }}"
+        $msvcPath = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory | Select-Object -First 1 -ExpandProperty FullName
+        echo "msvc_path=$msvcPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Find Windows SDK x64 Path
+      id: sdk-path
+      run: |
+        $sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+        $sdkToolsPath = Get-ChildItem "$sdkRoot\bin\10*" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$_\x64\rc.exe" } | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $sdkToolsPath) {
+            $sdkToolsPath = "$sdkRoot\bin\x64"
+        }
+        echo "sdk_path=$sdkToolsPath\x64" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Clone LLVM from fixed branch
+      run: |
+        git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
+        cd llvm-src
+
+    - name: Configure CMake with Fixed Linker Flags
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
+        
+        $installPath = "$(Get-Location)\install"
+        mkdir install -Force
+        mkdir build -Force
+        
+        cd build
+        
+        # 使用数组方式传递参数，避免反引号问题
+        $cmakeArgs = @(
+          "-G", "Ninja",
+          "-DCMAKE_BUILD_TYPE=Release",
+          "-DCMAKE_INSTALL_PREFIX=$installPath",
+          "-DLLVM_TARGETS_TO_BUILD=AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;Mips;MSP430;NVPTX;PowerPC;RISCV;Sparc;SystemZ;WebAssembly;X86",
+          "-DLLVM_BUILD_STATIC=ON",
+          "-DBUILD_SHARED_LIBS=OFF",
+          "-DLLVM_BUILD_LLVM_DYLIB=OFF",
+          "-DLLVM_LINK_LLVM_DYLIB=OFF",
+          "-DLLVM_ENABLE_LLVM_DYLIB=OFF",
+          "-DLLVM_ENABLE_PIC=OFF",
+          "-DLLVM_BUILD_LLVM_CXX_LIBS=OFF",
+          "-DLLVM_ENABLE_STATIC_ANALYSIS_TOOLS=ON",
+          "-DLLVM_USE_CRT_RELEASE=MT",
+          "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
+          "-DLLVM_ENABLE_LIBCXX=OFF",
+          "-DLLVM_ENABLE_TERMINFO=OFF",
+          "-DLLVM_ENABLE_ZLIB=OFF",
+          "-DLLVM_ENABLE_LIBUNWIND=OFF",
+          "-DLLVM_ENABLE_LIBXML2=OFF",
+          "-DLLVM_ENABLE_ZSTD=OFF",
+          "-DLLVM_ENABLE_LIBEDIT=OFF",
+          "-DLLVM_ENABLE_LIBPFM=OFF",
+          "-DLLVM_ENABLE_FFI=OFF",
+          "-DLLVM_ENABLE_PROJECTS=clang;lld",
+          "-DLLVM_INCLUDE_BENCHMARKS=OFF",
+          "-DLLVM_INCLUDE_TESTS=OFF",
+          "-DLLVM_INCLUDE_DOCS=OFF",
+          "-DLLVM_INCLUDE_UTILS=OFF",
+          "-DCLANG_INCLUDE_TESTS=OFF",
+          "-DCLANG_INCLUDE_DOCS=OFF",
+          "-DLLVM_TOOL_LLVM_COV_BUILD=OFF",
+          "-DLLVM_TOOL_LLVM_SYMBOLIZER_BUILD=OFF",
+          "-DLLVM_TOOL_LLVM_DWARF_DUMP_BUILD=OFF",
+          "-DLLVM_TOOL_LLVM_GO_BUILD=OFF",
+          "-DLLVM_TOOL_LLVM_ISEL_FUZZER_BUILD=OFF",
+          "-DCMAKE_CXX_FLAGS=/Zc:inline /Zc:strictStrings /Zc:rvalueCast /GR- /EHa- /Oi /Oy- /bigobj /DLLVM_ENABLE_STATIC_INIT_FIX",
+          "-DCMAKE_C_FLAGS=/Zc:inline /Zc:strictStrings /Zc:rvalueCast /GR- /EHa- /Oi /Oy- /bigobj /DLLVM_ENABLE_STATIC_INIT_FIX",
+          "-DCMAKE_EXE_LINKER_FLAGS=/OPT:REF /OPT:ICF /LTCG",
+          "-DCMAKE_MODULE_LINKER_FLAGS=/OPT:REF /OPT:ICF /LTCG",
+          "-DCMAKE_SHARED_LINKER_FLAGS=/OPT:REF /OPT:ICF /LTCG",
+          "-DLLVM_HOST_TRIPLE=x86_64-pc-windows-msvc",
+          "-DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-pc-windows-msvc",
+          "-DLLVM_ENABLE_WERROR=OFF",
+          "-DLLVM_APPEND_VC_REV=OFF",
+          "-DLLVM_INSTALL_TOOLCHAIN_ONLY=OFF",
+          "-DCLANG_PLUGIN_SUPPORT=OFF",
+          "-DLLVM_ENABLE_IDE=OFF",
+          "-DLLVM_OPTIMIZED_TABLEGEN=ON",
+          "-DLLVM_REVERSE_ITERATION=OFF",
+          "-DLLVM_USE_SPLIT_DWARF=OFF",
+          "-DLLVM_USE_RELATIVE_PATHS_IN_DEBUG_INFO=OFF",
+          "-DLLVM_USE_RELATIVE_PATHS_IN_FILES=OFF"
+        )
+        
+        cmake ..\llvm-src\llvm @cmakeArgs
+
+    - name: Build and Install LLVM
+      run: |
+        $msvcPath = "${{ steps.msvc-path.outputs.msvc_path }}"
+        $sdkPath = "${{ steps.sdk-path.outputs.sdk_path }}"
+        $env:PATH = "$msvcPath\bin\Hostx64\x64;$sdkPath;$env:PATH"
+        $env:LIB = "$msvcPath\lib\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
+        $env:INCLUDE = "$msvcPath\include;$msvcPath\atlmfc\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared"
+        
+        cd build
+        
+        # 构建主项目
+        cmake --build . --config Release -j 2
+        
+        # 检查并修复潜在的动态链接库
+        Write-Host "Checking for unwanted shared libraries..." -ForegroundColor Yellow
+        Get-ChildItem -Recurse -Filter "*.dll" | ForEach-Object {
+            Write-Host "Removing unwanted DLL: $_" -ForegroundColor Red
+            Remove-Item $_.FullName -Force
+        }
+        
+        # 重新构建以确保完全静态链接
+        Write-Host "Rebuilding to ensure static linking..." -ForegroundColor Yellow
+        cmake --build . --config Release -j 2 --target clang lld
+        
+        # 安装
+        ninja install
+        
+        # 验证安装结果
+        cd ..
+        if (Test-Path "install") {
+            # 检查生成的文件
+            Write-Host "Installation contents:" -ForegroundColor Green
+            Get-ChildItem "install" -Recurse | Select-Object -First 20
+            
+            # 验证关键工具
+            $tools = @("clang.exe", "clang++.exe", "lld.exe", "llvm-config.exe", "llvm-ar.exe", "llvm-objdump.exe")
+            foreach ($tool in $tools) {
+                $toolPath = "install/bin/$tool"
+                if (Test-Path $toolPath) {
+                    Write-Host "✓ $tool found" -ForegroundColor Green
+                    # 检查依赖
+                    Write-Host "Checking dependencies for $tool:" -ForegroundColor Cyan
+                    dumpbin /dependents $toolPath | Select-String "\.dll" | ForEach-Object {
+                        Write-Host "  DLL dependency: $_" -ForegroundColor Yellow
+                    }
+                } else {
+                    Write-Host "✗ $tool missing" -ForegroundColor Red
+                }
+            }
+            
+            $fileCount = (Get-ChildItem "install" -Recurse | Measure-Object).Count
+            Write-Host "Total files installed: $fileCount" -ForegroundColor Green
+            
+            if ($fileCount -gt 0) {
+                7z a llvm-full-static.zip ./install/*
+                Write-Host "✓ Archive created successfully" -ForegroundColor Green
+            } else {
+                Write-Host "✗ No files to archive" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "✗ Install directory not found" -ForegroundColor Red
+        }
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-full-static-windows-fixed
+        path: llvm-full-static.zip
+      if: always()
+
+    - name: Upload Build Logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: build/CMakeFiles/CMakeOutput.log
+      if: always()
+
+    - name: Upload Error Logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: error-logs
+        path: build/CMakeFiles/CMakeError.log
+      if: always()
