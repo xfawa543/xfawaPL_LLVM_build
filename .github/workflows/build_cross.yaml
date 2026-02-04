@@ -1,0 +1,126 @@
+name: Build Windows Static LLVM (Cross-Compile from Linux)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 600
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install MinGW-w64
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mingw-w64 gcc-mingw-w64 g++-mingw-w64 wine
+
+    - name: Clone LLVM
+      run: |
+        git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
+
+    - name: Configure CMake for Windows Cross-Compilation
+      run: |
+        cd llvm-src
+        
+        mkdir build
+        cd build
+        
+        # 获取 MinGW 路径
+        MINGW_PREFIX=$(x86_64-w64-mingw32-gcc -print-sysroot 2>/dev/null | sed 's/\/x86_64-w64-mingw32//')
+        if [ -z "$MINGW_PREFIX" ]; then
+          MINGW_PREFIX="/usr/x86_64-w64-mingw32"
+        fi
+        
+        echo "MINGW_PREFIX=$MINGW_PREFIX"
+        
+        cmake -G "Unix Makefiles" \
+          -DCMAKE_SYSTEM_NAME=Windows \
+          -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+          -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+          -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
+          -DCMAKE_STRIP=x86_64-w64-mingw32-strip \
+          -DCMAKE_FIND_ROOT_PATH=$MINGW_PREFIX \
+          -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+          -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+          -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DLLVM_TARGETS_TO_BUILD=X86 \
+          -DLLVM_BUILD_STATIC=ON \
+          -DLLVM_BUILD_LLVM_DYLIB=OFF \
+          -DLLVM_LINK_LLVM_DYLIB=OFF \
+          -DLLVM_ENABLE_LIBCXX=OFF \
+          -DLLVM_ENABLE_TERMINFO=OFF \
+          -DLLVM_ENABLE_ZLIB=OFF \
+          -DLLVM_ENABLE_LIBXML2=OFF \
+          -DLLVM_INCLUDE_TESTS=OFF \
+          -DLLVM_INCLUDE_DOCS=OFF \
+          -DLLVM_INCLUDE_UTILS=OFF \
+          -DCLANG_INCLUDE_TESTS=OFF \
+          -DCLANG_INCLUDE_DOCS=OFF \
+          -DLLVM_TOOL_LLVM_COV_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_SYMBOLIZER_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_DWARF_DUMP_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_GO_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_ISEL_FUZZER_BUILD=OFF \
+          -DCMAKE_C_FLAGS="-O2 -static-libgcc" \
+          -DCMAKE_CXX_FLAGS="-O2 -static-libgcc -static-libstdc++" \
+          -DCMAKE_EXE_LINKER_FLAGS="-static" \
+          -DCMAKE_MODULE_LINKER_FLAGS="-static" \
+          -DCMAKE_SHARED_LINKER_FLAGS="-static" \
+          ../llvm
+
+    - name: Build LLVM
+      run: |
+        cd llvm-src/build
+        make -j$(nproc)
+
+    - name: Create Distribution Package
+      run: |
+        cd llvm-src/build
+        mkdir -p dist
+        
+        # 复制必要的文件
+        cp bin/*.exe dist/ 2>/dev/null || true
+        cp bin/*.dll dist/ 2>/dev/null || true
+        cp lib/*.a dist/ 2>/dev/null || true
+        cp lib/*.lib dist/ 2>/dev/null || true
+        
+        # 复制头文件
+        mkdir -p dist/include
+        cp -r ../llvm/include/* dist/include/ 2>/dev/null || true
+        mkdir -p dist/lib/clang/*/include
+        cp -r ../clang/include/* dist/lib/clang/*/include/ 2>/dev/null || true
+        
+        # 创建 zip
+        cd dist
+        echo "Package contents:"
+        find . -type f | head -20
+        cd ..
+        7z a ../llvm-windows-static.zip ./dist/*
+        cd ..
+        echo "Package created: llvm-windows-static.zip"
+        ls -lh llvm-windows-static.zip
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-windows-static-cross
+        path: llvm-src/build/llvm-windows-static.zip
+      if: always()
+
+    - name: Upload Build Logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-cross
+        path: llvm-src/build/CMakeFiles/CMakeOutput.log
+      if: always()
+
+    - name: Upload Error Logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: error-logs-cross
+        path: llvm-src/build/CMakeFiles/CMakeError.log
+      if: always()
