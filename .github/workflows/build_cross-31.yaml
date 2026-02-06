@@ -1,4 +1,4 @@
-name: Build Windows Static LLVM with Clang (Cross-Compile from Linux-31)
+name: Build Windows Static LLVM with Clang (Cross-Compile from Linux-30)
 
 on:
   workflow_dispatch:
@@ -18,12 +18,23 @@ jobs:
       run: |
         git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
 
+    - name: Debug directory structure
+      run: |
+        cd llvm-src
+        echo "=== 目录结构 ==="
+        ls -la
+        echo "=== 查找CMakeLists.txt ==="
+        find . -name "CMakeLists.txt" -type f | head -20
+        echo "=== 顶层文件 ==="
+        ls -la | head -20
+
     - name: Configure LLVM
       run: |
         cd llvm-src
         mkdir -p build install
-        cd build
-        cmake -G Ninja \
+        
+        # 使用现代CMake语法，避免路径解析问题
+        cmake -G Ninja -S . -B build \
           -DCMAKE_SYSTEM_NAME=Windows \
           -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
           -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
@@ -34,7 +45,7 @@ jobs:
           -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
           -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=../install \
+          -DCMAKE_INSTALL_PREFIX=install \
           -DLLVM_TARGETS_TO_BUILD="AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;Mips;MSP430;NVPTX;PowerPC;RISCV;Sparc;SystemZ;WebAssembly;X86" \
           -DLLVM_ENABLE_PROJECTS="clang;lld" \
           -DLLVM_BUILD_STATIC=ON \
@@ -49,17 +60,25 @@ jobs:
           -DLLVM_INCLUDE_UTILS=OFF \
           -DCLANG_INCLUDE_TESTS=OFF \
           -DCLANG_INCLUDE_DOCS=OFF \
+          -DLLVM_TOOL_LLVM_COV_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_SYMBOLIZER_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_DWARF_DUMP_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_GO_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_ISEL_FUZZER_BUILD=OFF \
           -DCMAKE_C_FLAGS="-O2 -static-libgcc" \
           -DCMAKE_CXX_FLAGS="-O2 -static-libgcc -static-libstdc++" \
           -DCMAKE_EXE_LINKER_FLAGS="-static" \
           -DCMAKE_MODULE_LINKER_FLAGS="-static" \
-          -DCMAKE_SHARED_LINKER_FLAGS="-static" \
-          ..
+          -DCMAKE_SHARED_LINKER_FLAGS="-static"
 
-    - name: Build and Install LLVM
+    - name: Build LLVM
       run: |
         cd llvm-src/build
         ninja -j$(nproc)
+
+    - name: Install LLVM
+      run: |
+        cd llvm-src/build
         ninja install
 
     - name: Create Distribution Package
@@ -72,3 +91,7 @@ jobs:
       with:
         name: llvm-windows-static-with-clang-v30
         path: llvm-windows-static.zip
+        if-no-files-found: warn
+        compression-level: 6
+        overwrite: false
+        include-hidden-files: false
