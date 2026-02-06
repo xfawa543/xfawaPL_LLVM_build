@@ -1,4 +1,4 @@
-name: Build Windows Static LLVM with Clang (Cross-Compile from Linux-30)
+name: Build Windows Static LLVM with Clang (Cross-Compile from Linux-31)
 
 on:
   workflow_dispatch:
