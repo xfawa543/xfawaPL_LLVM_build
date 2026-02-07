@@ -55,7 +55,7 @@ jobs:
           -DCMAKE_EXE_LINKER_FLAGS="-static" \
           -DCMAKE_MODULE_LINKER_FLAGS="-static" \
           -DCMAKE_SHARED_LINKER_FLAGS="-static" \
-          ..
+          ../
 
     - name: Build and Install LLVM
       run: |
