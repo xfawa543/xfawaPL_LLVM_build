@@ -1,0 +1,73 @@
+name: Build Windows Static LLVM with Clang (Cross-Compile from Linux-40)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 600
+
+    steps:
+    - name: Install MinGW-w64 and tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mingw-w64 gcc-mingw-w64 g++-mingw-w64 p7zip-full ninja-build git
+
+    - name: Clone and Configure LLVM
+      run: |
+        git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
+        
+        cd llvm-src/llvm
+        mkdir -p build install
+        cd build
+        
+        # cmake 在 build 目录运行，.. 就是 llvm-src/llvm/
+        cmake -G Ninja \
+          -DCMAKE_SYSTEM_NAME=Windows \
+          -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+          -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+          -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
+          -DCMAKE_STRIP=x86_64-w64-mingw32-strip \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=../install \
+          -DLLVM_TARGETS_TO_BUILD=AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;Mips;MSP430;NVPTX;PowerPC;RISCV;Sparc;SystemZ;WebAssembly;X86 \
+          -DLLVM_ENABLE_PROJECTS="" \
+          -DLLVM_BUILD_STATIC=ON \
+          -DLLVM_BUILD_LLVM_DYLIB=OFF \
+          -DLLVM_LINK_LLVM_DYLIB=OFF \
+          -DLLVM_ENABLE_LIBCXX=OFF \
+          -DLLVM_ENABLE_ZLIB=OFF \
+          -DLLVM_ENABLE_LIBXML2=OFF \
+          -DLLVM_ENABLE_TERMINFO=OFF \
+          -DLLVM_INCLUDE_TESTS=OFF \
+          -DLLVM_INCLUDE_DOCS=OFF \
+          -DLLVM_INCLUDE_UTILS=OFF \
+          -DCLANG_INCLUDE_TESTS=OFF \
+          -DCLANG_INCLUDE_DOCS=OFF \
+          -DLLVM_TOOL_LLVM_COV_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_SYMBOLIZER_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_DWARF_DUMP_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_GO_BUILD=OFF \
+          -DLLVM_TOOL_LLVM_ISEL_FUZZER_BUILD=OFF \
+          -DCMAKE_C_FLAGS="-O2 -static-libgcc" \
+          -DCMAKE_CXX_FLAGS="-O2 -static-libgcc -static-libstdc++" \
+          -DCMAKE_EXE_LINKER_FLAGS="-static" \
+          -DCMAKE_MODULE_LINKER_FLAGS="-static" \
+          -DCMAKE_SHARED_LINKER_FLAGS="-static" \
+          ..
+
+    - name: Build and Install LLVM
+      run: |
+        cd llvm-src/llvm/build && ninja -j$(nproc) && ninja install
+
+    - name: Create Distribution Package
+      run: |
+        cd ../.. && 7z a llvm-windows-static.zip install/*
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-windows-static-v38
+        path: llvm-windows-static.zip
+      if: always()
