@@ -13,7 +13,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y mingw-w64 gcc-mingw-w64 g++-mingw-w64 p7zip-full ninja-build git
-        
+       
     - name: Clone, Configure, Build and Package LLVM
       run: |
         git clone https://github.com/xfawa543/xfawa-llvm-project.git llvm-src
@@ -41,7 +41,7 @@ jobs:
              -DLLVM_ENABLE_ZLIB=OFF \
              -DLLVM_ENABLE_LIBXML2=OFF \
              -DLLVM_INCLUDE_TESTS=OFF \
-       .     -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF \
              -DLLVM_INCLUDE_UTILS=OFF \
              -DCLANG_INCLUDE_TESTS=OFF \
              -DCLANG_INCLUDE_DOCS=OFF \
