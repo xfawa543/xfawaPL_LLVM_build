@@ -1,4 +1,4 @@
-name: Build Zero-Dependency Cross-Platform LLVM (build32)
+name: Build Zero-Dependency CrossPlatform LLVM (build32)
 
 on:
   workflow_dispatch:
